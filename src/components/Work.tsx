@@ -3,59 +3,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { workSections, type VideoItem } from "@/data/content";
 
-function useInView<T extends HTMLElement>(ref: React.RefObject<T | null>) {
-  const [inView, setInView] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        setInView(entries[0]?.isIntersecting ?? false);
-      },
-      { rootMargin: "300px" },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [ref]);
-  return inView;
-}
-
 function VideoCard({
   item,
   vertical,
-  suspended,
   onOpen,
 }: {
   item: VideoItem;
   vertical: boolean;
-  suspended: boolean;
   onOpen: () => void;
 }) {
   const cardWidth = vertical ? 220 : 440;
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const viewport = video.closest<HTMLElement>("[data-video-viewport]");
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!suspended && entry?.isIntersecting && entry.intersectionRatio >= 0.5) {
-          void video.play().catch(() => undefined);
-        } else {
-          video.pause();
-        }
-      },
-      { root: viewport, threshold: [0, 0.5] },
-    );
-    observer.observe(video);
-
-    return () => {
-      observer.disconnect();
-      video.pause();
-    };
-  }, [suspended]);
 
   return (
     <div className="shrink-0" style={{ width: cardWidth }}>
@@ -67,7 +24,6 @@ function VideoCard({
         }`}
       >
         <video
-          ref={videoRef}
           src={item.src}
           muted
           loop
@@ -104,13 +60,14 @@ function VideoMarquee({
   const firstGroupRef = useRef<HTMLDivElement>(null);
   const offset = useRef(0);
   const paused = useRef(false);
-  const inView = useInView(wrapRef);
 
   useEffect(() => {
-    if (!inView) return;
     let raf = 0;
     let last = performance.now();
+    let lastPlaybackCheck = 0;
     let groupWidth = 0;
+    let activeVideos = new Set<HTMLVideoElement>();
+    const videos = Array.from(wrapRef.current?.querySelectorAll("video") ?? []);
     const measure = () => {
       const nextWidth = firstGroupRef.current?.getBoundingClientRect().width ?? 0;
       if (nextWidth > 0 && groupWidth > 0 && nextWidth !== groupWidth) {
@@ -129,21 +86,60 @@ function VideoMarquee({
       const dt = Math.min(50, t - last);
       last = t;
       const track = trackRef.current;
+      const wrap = wrapRef.current;
+      const wrapRect = wrap?.getBoundingClientRect();
+      const isVisible = !!wrapRect && wrapRect.bottom > 0 && wrapRect.top < window.innerHeight;
+
       if (track && groupWidth > 0) {
-        if (!paused.current && !suspended) {
+        if (isVisible && !paused.current && !suspended) {
           offset.current = (offset.current + (dt / 1000) * (vertical ? 32 : 42)) % groupWidth;
         }
         const x = reverse ? -groupWidth + offset.current : -offset.current;
         track.style.transform = `translate3d(${x}px, 0, 0)`;
       }
+
+      if (t - lastPlaybackCheck >= 250) {
+        lastPlaybackCheck = t;
+        const visibleVideos = new Set<HTMLVideoElement>();
+
+        if (wrapRect && wrapRect.bottom > 0 && wrapRect.top < window.innerHeight) {
+          for (const video of videos) {
+            const rect = video.getBoundingClientRect();
+            const visibleWidth = Math.max(
+              0,
+              Math.min(rect.right, wrapRect.right, window.innerWidth) -
+                Math.max(rect.left, wrapRect.left, 0),
+            );
+            const visibleHeight = Math.max(
+              0,
+              Math.min(rect.bottom, wrapRect.bottom, window.innerHeight) -
+                Math.max(rect.top, wrapRect.top, 0),
+            );
+            const ratio = (visibleWidth * visibleHeight) / Math.max(1, rect.width * rect.height);
+            if (ratio >= 0.35) visibleVideos.add(video);
+          }
+        }
+
+        if (suspended) visibleVideos.clear();
+        for (const video of videos) {
+          if (visibleVideos.has(video)) {
+            if (video.paused) void video.play().catch(() => undefined);
+          } else {
+            video.pause();
+          }
+        }
+        activeVideos = visibleVideos;
+      }
+
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();
+      for (const video of activeVideos) video.pause();
     };
-  }, [inView, vertical, reverse, suspended]);
+  }, [vertical, reverse, suspended]);
 
   return (
     <div
@@ -154,7 +150,7 @@ function VideoMarquee({
       className="overflow-hidden py-4 [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]"
     >
       <div ref={trackRef} className="flex w-max items-center will-change-transform">
-        {[0, ...(inView ? [1] : [])].map((groupIndex) => (
+        {[0, 1].map((groupIndex) => (
           <div
             key={groupIndex}
             ref={groupIndex === 0 ? firstGroupRef : undefined}
@@ -165,7 +161,6 @@ function VideoMarquee({
                 key={`${groupIndex}-${item.id}`}
                 item={item}
                 vertical={vertical}
-                suspended={suspended}
                 onOpen={() => onOpen(item)}
               />
             ))}

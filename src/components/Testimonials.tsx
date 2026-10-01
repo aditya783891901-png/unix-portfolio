@@ -1,7 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { X } from "lucide-react";
 import { Mascot } from "@/components/Mascot";
-import { testimonials } from "@/data/content";
+import { testimonials, type Testimonial } from "@/data/content";
 
 type Variant = "sky" | "blue" | "deep";
 type Slot = { x: number; y: number; s: number; v: Variant };
@@ -48,11 +49,7 @@ const ITEMS: Item[] = SLOTS.map((slot, i) => {
 });
 
 const alignStyle = (x: number): CSSProperties =>
-  x <= 20
-    ? { left: 0 }
-    : x >= 80
-      ? { right: 0 }
-      : { left: "50%", transform: "translateX(-50%)" };
+  x <= 20 ? { left: 0 } : x >= 80 ? { right: 0 } : { left: "50%", transform: "translateX(-50%)" };
 
 const cardBox: CSSProperties = {
   padding: 6,
@@ -65,9 +62,7 @@ const cardBox: CSSProperties = {
 
 function useIsDesktop() {
   const query = "(min-width: 768px)";
-  const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== "undefined" && window.matchMedia(query).matches,
-  );
+  const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia(query);
     const handler = () => setIsDesktop(mq.matches);
@@ -91,7 +86,14 @@ function ShotCard({ src, alt }: { src: string; alt: string }) {
         src={src}
         alt={alt}
         loading="lazy"
-        style={{ display: "block", width: "100%", height: "auto", maxHeight: 340, objectFit: "contain", borderRadius: 10 }}
+        style={{
+          display: "block",
+          width: "100%",
+          height: "auto",
+          maxHeight: 340,
+          objectFit: "contain",
+          borderRadius: 10,
+        }}
       />
     </motion.div>
   );
@@ -120,10 +122,62 @@ function EmojiBubble({ emoji }: { emoji: string }) {
   );
 }
 
+function TestimonialLightbox({
+  testimonial,
+  onClose,
+}: {
+  testimonial: Testimonial;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Testimonial from ${testimonial.name}`}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-foreground/75 p-4 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ y: 16, scale: 0.97 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: 12, scale: 0.98 }}
+        onClick={(event) => event.stopPropagation()}
+        className="relative max-h-[92vh] max-w-[min(92vw,640px)] rounded-xl bg-card p-2 shadow-2xl"
+      >
+        <img
+          src={testimonial.image}
+          alt={`Message from ${testimonial.name}`}
+          className="block max-h-[86vh] max-w-full rounded-lg object-contain"
+        />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close testimonial"
+          className="absolute right-4 top-4 rounded-full bg-card p-2 text-foreground shadow-md"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export function Testimonials() {
   const isDesktop = useIsDesktop();
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [selectedTestimonial, setSelectedTestimonial] = useState<Testimonial | null>(null);
   const activeId = pinnedId ?? hoverId;
 
   const renderMinion = (item: Item, index: number, mobile = false) => {
@@ -153,14 +207,7 @@ export function Testimonials() {
 
     return (
       <div key={`${mobile ? "m-" : ""}${item.id}`} style={wrapStyle}>
-        <motion.div
-          animate={isActive ? { y: -8, scale: 1.12 } : { y: [0, -5, 0], scale: 1 }}
-          transition={
-            isActive
-              ? { duration: 0.22, ease: "easeOut" }
-              : { duration: 2.6 + (index % 5) * 0.4, repeat: Infinity, ease: "easeInOut" }
-          }
-        >
+        <div>
           <button
             type="button"
             disabled={!interactive}
@@ -168,6 +215,10 @@ export function Testimonials() {
             onMouseLeave={() => setHoverId((c) => (c === item.id ? null : c))}
             onClick={(e) => {
               e.stopPropagation();
+              if (testimonial) {
+                setSelectedTestimonial(testimonial);
+                return;
+              }
               if (interactive) setPinnedId((c) => (c === item.id ? null : item.id));
             }}
             onFocus={() => interactive && setHoverId(item.id)}
@@ -182,10 +233,20 @@ export function Testimonials() {
               cursor: interactive ? "pointer" : "default",
             }}
           >
-            <Mascot
-              variant={item.v}
-              className="h-auto w-full drop-shadow-[0_12px_18px_oklch(0.241_0.063_257.7/0.16)]"
-            />
+            <motion.span
+              animate={isActive ? { y: -8, scale: 1.12 } : { y: [0, -5, 0], scale: 1 }}
+              transition={
+                isActive
+                  ? { duration: 0.22, ease: "easeOut" }
+                  : { duration: 2.6 + (index % 5) * 0.4, repeat: Infinity, ease: "easeInOut" }
+              }
+              className="block w-full"
+            >
+              <Mascot
+                variant={item.v}
+                className="h-auto w-full drop-shadow-[0_12px_18px_oklch(0.241_0.063_257.7/0.16)]"
+              />
+            </motion.span>
             <span
               style={{
                 display: "block",
@@ -198,13 +259,17 @@ export function Testimonials() {
               }}
             />
           </button>
-        </motion.div>
+        </div>
 
         {interactive && !(mobile && testimonial) && (
           <div style={popStyle}>
             <AnimatePresence>
               {isActive && testimonial && (
-                <ShotCard key="shot" src={testimonial.image} alt={`Message from ${testimonial.name}`} />
+                <ShotCard
+                  key="shot"
+                  src={testimonial.image}
+                  alt={`Message from ${testimonial.name}`}
+                />
               )}
               {isActive && item.emoji && <EmojiBubble key="emoji" emoji={item.emoji} />}
             </AnimatePresence>
@@ -214,16 +279,13 @@ export function Testimonials() {
     );
   };
 
-  const activeTestimonial = pinnedId?.startsWith("tm-")
-    ? testimonials[Number(pinnedId.slice(3))]
-    : null;
-
   return (
     <section id="proof" className="section-pad bg-secondary" style={{ overflowX: "clip" }}>
       <div className="shell px-6 text-center md:px-10">
         <div className="eyebrow justify-center">Proof</div>
         <h2 className="mx-auto mt-4 max-w-2xl text-4xl font-bold tracking-tight md:text-6xl">
-          Don&apos;t take our word for it. Take <span className="font-accent text-primary">theirs</span>.
+          Don&apos;t take our word for it. Take{" "}
+          <span className="font-accent text-primary">theirs</span>.
         </h2>
         <p className="mx-auto mt-5 max-w-lg text-lg text-muted-foreground">
           Hover or tap a little guy to see the real thing.
@@ -257,28 +319,22 @@ export function Testimonials() {
           >
             {ITEMS.map((item, i) => renderMinion(item, i, true))}
           </div>
-
-          <AnimatePresence>
-            {activeTestimonial && (
-              <motion.div
-                key={activeTestimonial.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 8 }}
-                style={{ ...cardBox, margin: "0 auto 24px", width: 320, maxWidth: "calc(100vw - 32px)" }}
-              >
-                <img
-                  src={activeTestimonial.image}
-                  alt={`Message from ${activeTestimonial.name}`}
-                  style={{ display: "block", width: "100%", height: "auto", maxHeight: 340, objectFit: "contain", borderRadius: 10 }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       )}
 
-      <p className="text-center text-sm font-medium text-muted-foreground" style={{ marginTop: 56 }}>
+      <AnimatePresence>
+        {selectedTestimonial && (
+          <TestimonialLightbox
+            testimonial={selectedTestimonial}
+            onClose={() => setSelectedTestimonial(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <p
+        className="text-center text-sm font-medium text-muted-foreground"
+        style={{ marginTop: 56 }}
+      >
         Every word above is a real message from a real client.
       </p>
     </section>
